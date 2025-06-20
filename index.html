@@ -37,10 +37,12 @@
     }
 
     async function fetchViews(project) {
-      const end = new Date();
-      end.setDate(end.getDate() - 1);
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(end.getDate() - 1); // אתמול
       const start = new Date(end);
-      start.setDate(start.getDate() - 30);
+      start.setDate(start.getDate() - 30); // 30 ימים אחורה
+
       const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/project/${project}/all-access/user/daily/${formatDate(start)}/${formatDate(end)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`שגיאה בנתונים: ${project}`);
