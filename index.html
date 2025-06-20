@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>צפיות יומיות וממוצע 30 ימים</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+  <div class="max-w-3xl mx-auto py-8 px-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">צפיות יומיות וממוצע 30 ימים — ויקיפדיות</h1>
+    <div id="container" class="bg-white shadow rounded-lg p-6">
+      <div id="loading" class="text-center text-gray-500">טוען נתונים, אנא המתן...</div>
+      <div id="error" class="hidden text-center text-red-600">⚠️ טעינת הנתונים נכשלה. בדוק את החיבור ונסה שנית.</div>
+
+      <table id="data-table" class="hidden w-full mt-4 text-right">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="px-4 py-2">ויקי</th>
+            <th class="px-4 py-2">צפיות אתמול</th>
+            <th class="px-4 py-2">ממוצע 30 ימים</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <canvas id="views-chart" class="mt-6 hidden"></canvas>
+    </div>
+  </div>
+
+  <script>
+    async function fetchViews(project) {
+      const api = `https://wikimedia.org/api/rest_v1/metrics/pageviews/project/${project}/all-access/user/daily`;
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(end.getDate() - 1);
+      const start30 = new Date(end);
+      start30.setDate(start30.getDate() - 30);
+
+      const fmt = d => d.toISOString().slice(0,10).replace(/-/g, '');
+      const url = `${api}/${fmt(start30)}/${fmt(end)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const json = await res.json();
+      if (!json.items || json.items.length === 0) {
+        throw new Error('אין נתונים');
+      }
+      return json.items;
+    }
+
+    function process(items) {
+      const last = items[items.length - 1].views;
+      const prev = items.slice(0, -1).map(x => x.views);
+      const avg = prev.reduce((a,b)=>a+b, 0) / prev.length;
+      return { last, avg };
+    }
+
+    async function build() {
+      const projects = [
+        'he.wikipedia',
+        'en.wikipedia',
+        'de.wikipedia',
+        'fr.wikipedia',
+        'es.wikipedia'
+      ];
+      const results = [];
+
+      for (const p of projects) {
+        try {
+          const items = await fetchViews(p);
+          const { last, avg } = process(items);
+          results.push({ project: p, last, avg });
+        } catch(err) {
+          console.error('Error fetchViews for', p, err);
+        }
+      }
+
+      document.getElementById('loading').classList.add('hidden');
+
+      if (results.length === 0) {
+        document.getElementById('error').classList.remove('hidden');
+        return;
+      }
+
+      const tbody = document.querySelector('#data-table tbody');
+      const labels = [], dataLast = [], dataAvg = [];
+
+      results.forEach(r => {
+        const lang = r.project.split('.')[0].toUpperCase();
+        labels.push(lang);
+        dataLast.push(r.last);
+        dataAvg.push(Math.round(r.avg));
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="border px-4 py-2">${lang}</td>
+          <td class="border px-4 py-2">${r.last.toLocaleString()}</td>
+          <td class="border px-4 py-2">${Math.round(r.avg).toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('data-table').classList.remove('hidden');
+      document.getElementById('views-chart').classList.remove('hidden');
+
+      const ctx = document.getElementById('views-chart');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'צפיות אתמול', data: dataLast, backgroundColor: 'rgb(37,99,235)' },
+            { label: 'ממוצע 30 ימים', data: dataAvg, backgroundColor: 'rgb(159,122,234)' }
+          ]
+        },
+        options: {
+          responsive: true,
+          indexAxis: 'y',
+          scales: { x: { beginAtZero: true } }
+        }
+      });
+    }
+
+    build();
+  </script>
+</body>
+</html>
