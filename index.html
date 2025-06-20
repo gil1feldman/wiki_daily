@@ -3,127 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>צפיות יומיות וממוצע 30 ימים</title>
+  <title>השוואת צפיות בויקיפדיה</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans">
-  <div class="max-w-3xl mx-auto py-8 px-4">
-    <h1 class="text-2xl font-bold mb-4 text-center">צפיות יומיות וממוצע 30 ימים — ויקיפדיות</h1>
-    <div id="container" class="bg-white shadow rounded-lg p-6">
-      <div id="loading" class="text-center text-gray-500">טוען נתונים, אנא המתן...</div>
-      <div id="error" class="hidden text-center text-red-600">⚠️ טעינת הנתונים נכשלה. בדוק את החיבור ונסה שנית.</div>
+<body class="bg-gray-50 text-gray-900 font-sans p-4 sm:p-6">
+  <div class="max-w-4xl mx-auto bg-white shadow-md rounded-xl p-6">
+    <h1 class="text-2xl font-bold mb-4 text-center">השוואת צפיות בויקיפדיה – אתמול מול ממוצע 30 ימים</h1>
+    <p class="text-center text-sm text-gray-500 mb-6">הנתונים נמשכים בזמן אמת מ-Wikimedia API</p>
 
-      <table id="data-table" class="hidden w-full mt-4 text-right">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="px-4 py-2">ויקי</th>
-            <th class="px-4 py-2">צפיות אתמול</th>
-            <th class="px-4 py-2">ממוצע 30 ימים</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div id="loading" class="text-center text-gray-600">טוען נתונים...</div>
+    <div id="error" class="hidden text-center text-red-600">⚠️ שגיאה בטעינת הנתונים.</div>
 
-      <canvas id="views-chart" class="mt-6 hidden"></canvas>
-    </div>
+    <table id="data-table" class="hidden w-full mt-4 text-right border border-gray-200 rounded-lg">
+      <thead class="bg-gray-100 font-bold text-sm">
+        <tr>
+          <th class="p-2 border">שפה</th>
+          <th class="p-2 border">צפיות אתמול</th>
+          <th class="p-2 border">ממוצע 30 ימים</th>
+        </tr>
+      </thead>
+      <tbody class="text-sm bg-white"></tbody>
+    </table>
+
+    <canvas id="views-chart" class="mt-8 hidden"></canvas>
   </div>
 
   <script>
-    async function fetchViews(project) {
-      const api = `https://wikimedia.org/api/rest_v1/metrics/pageviews/project/${project}/all-access/user/daily`;
-      const today = new Date();
-      const end = new Date(today);
-      end.setDate(end.getDate() - 1);
-      const start30 = new Date(end);
-      start30.setDate(start30.getDate() - 30);
+    const projects = ['he.wikipedia', 'en.wikipedia', 'fr.wikipedia', 'de.wikipedia', 'es.wikipedia'];
 
-      const fmt = d => d.toISOString().slice(0,10).replace(/-/g, '');
-      const url = `${api}/${fmt(start30)}/${fmt(end)}`;
+    function formatDate(date) {
+      return date.toISOString().split('T')[0].replace(/-/g, '');
+    }
+
+    async function fetchViews(project) {
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 30);
+      const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/project/${project}/all-access/user/daily/${formatDate(start)}/${formatDate(end)}`;
       const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const json = await res.json();
-      if (!json.items || json.items.length === 0) {
-        throw new Error('אין נתונים');
-      }
-      return json.items;
+      if (!res.ok) throw new Error(`שגיאה בנתונים: ${project}`);
+      const data = await res.json();
+      return data.items;
     }
 
     function process(items) {
       const last = items[items.length - 1].views;
-      const prev = items.slice(0, -1).map(x => x.views);
-      const avg = prev.reduce((a,b)=>a+b, 0) / prev.length;
+      const avg = items.slice(0, -1).reduce((sum, item) => sum + item.views, 0) / (items.length - 1);
       return { last, avg };
     }
 
-    async function build() {
-      const projects = [
-        'he.wikipedia',
-        'en.wikipedia',
-        'de.wikipedia',
-        'fr.wikipedia',
-        'es.wikipedia'
-      ];
+    async function loadData() {
       const results = [];
-
-      for (const p of projects) {
+      for (const project of projects) {
         try {
-          const items = await fetchViews(p);
+          const items = await fetchViews(project);
           const { last, avg } = process(items);
-          results.push({ project: p, last, avg });
-        } catch(err) {
-          console.error('Error fetchViews for', p, err);
+          results.push({ lang: project.split('.')[0].toUpperCase(), last, avg: Math.round(avg) });
+        } catch (err) {
+          console.error(err);
         }
       }
 
       document.getElementById('loading').classList.add('hidden');
-
-      if (results.length === 0) {
+      if (!results.length) {
         document.getElementById('error').classList.remove('hidden');
         return;
       }
 
       const tbody = document.querySelector('#data-table tbody');
-      const labels = [], dataLast = [], dataAvg = [];
-
       results.forEach(r => {
-        const lang = r.project.split('.')[0].toUpperCase();
-        labels.push(lang);
-        dataLast.push(r.last);
-        dataAvg.push(Math.round(r.avg));
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="border px-4 py-2">${lang}</td>
-          <td class="border px-4 py-2">${r.last.toLocaleString()}</td>
-          <td class="border px-4 py-2">${Math.round(r.avg).toLocaleString()}</td>`;
-        tbody.appendChild(tr);
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="p-2 border">${r.lang}</td>
+          <td class="p-2 border text-center">${r.last.toLocaleString()}</td>
+          <td class="p-2 border text-center">${r.avg.toLocaleString()}</td>
+        `;
+        tbody.appendChild(row);
       });
-
       document.getElementById('data-table').classList.remove('hidden');
-      document.getElementById('views-chart').classList.remove('hidden');
 
       const ctx = document.getElementById('views-chart');
+      document.getElementById('views-chart').classList.remove('hidden');
       new Chart(ctx, {
         type: 'bar',
         data: {
-          labels,
+          labels: results.map(r => r.lang),
           datasets: [
-            { label: 'צפיות אתמול', data: dataLast, backgroundColor: 'rgb(37,99,235)' },
-            { label: 'ממוצע 30 ימים', data: dataAvg, backgroundColor: 'rgb(159,122,234)' }
+            {
+              label: 'צפיות אתמול',
+              data: results.map(r => r.last),
+              backgroundColor: 'rgb(59,130,246)',
+            },
+            {
+              label: 'ממוצע 30 ימים',
+              data: results.map(r => r.avg),
+              backgroundColor: 'rgb(96,165,250)',
+            }
           ]
         },
         options: {
           responsive: true,
           indexAxis: 'y',
-          scales: { x: { beginAtZero: true } }
+          plugins: {
+            legend: { position: 'top' }
+          },
+          scales: {
+            x: { beginAtZero: true }
+          }
         }
       });
     }
 
-    build();
+    loadData();
   </script>
 </body>
 </html>
